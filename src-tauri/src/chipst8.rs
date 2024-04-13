@@ -9,6 +9,32 @@ const FONT_SIZE: usize = 80;
 
 pub type Display = [[bool; SCREEN_WIDTH]; SCREEN_HEIGHT];
 
+/**
+ * A Chip8 keypad is like below:
+ * 1 2 3 C
+ * 4 5 6 D
+ * 7 8 9 E
+ * A 0 B F
+**/
+enum Chip8Key {
+    Key1,
+    Key2,
+    Key3,
+    KeyC,
+    Key4,
+    Key5,
+    Key6,
+    KeyD,
+    Key7,
+    Key8,
+    Key9,
+    KeyE,
+    KeyA,
+    Key0,
+    KeyB,
+    KeyF,
+}
+
 pub struct Chipst8 {
     memory: [u8; 4096],
     pc: u16,
