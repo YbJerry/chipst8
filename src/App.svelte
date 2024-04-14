@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { listen } from '@tauri-apps/api/event'
+  import { listen, emit } from '@tauri-apps/api/event'
 
   function draw(pixels: Array<Array<boolean>>) {
     const canvas = document.getElementById('screen') as HTMLCanvasElement;
@@ -21,32 +21,51 @@
     }
   }
 
-  const keyEnum = {
-    '1': 0,
-    '2': 1,
-    '3': 2,
-    '4': 3,
-    'q': 4,
-    'w': 5,
-    'e': 6,
-    'r': 7,
-    'a': 8,
-    's': 9,
-    'd': 10,
-    'f': 11,
-    'z': 12,
-    'x': 13,
-    'c': 14,
-    'v': 15,
+  // /**
+  //  * A Chip8 keypad is like below:
+  //  * 1 2 3 C
+  //  * 4 5 6 D
+  //  * 7 8 9 E
+  //  * A 0 B F
+  // **/
+  const keyEnum: Record<string, number> = {
+    '1': 0x1,
+    '2': 0x2,
+    '3': 0x3,
+    '4': 0xC,
+    'q': 0x4,
+    'w': 0x5,
+    'e': 0x6,
+    'r': 0xD,
+    'a': 0x7,
+    's': 0x8,
+    'd': 0x9,
+    'f': 0xE,
+    'z': 0xA,
+    'x': 0x0,
+    'c': 0xB,
+    'v': 0xF,
   }
 
-  function handleKeydown(event: KeyboardEvent) {
-    console.log(event);
-    
+  function transKey(key: string) {
+    return keyEnum[key];
   }
 
-  function handleKeyup(event: KeyboardEvent) {
-    console.log(event);
+  async function handleKeydown(event: KeyboardEvent) {
+    //console.log(event);
+    const key = transKey(event.key);
+    // console.log(key)
+    if (key !== undefined) {
+      await emit('keyEvent', { key: key, press: true });
+    }
+  }
+
+  async function handleKeyup(event: KeyboardEvent) {
+    //console.log(event);
+    const key = transKey(event.key);
+    if (key !== undefined) {
+      await emit('keyEvent', { key: key, press: false });
+    }
   }
 
   onMount(async () => {

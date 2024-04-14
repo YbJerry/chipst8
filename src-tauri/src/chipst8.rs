@@ -1,4 +1,4 @@
-use std::sync::mpsc::Sender;
+use std::{any::Any, sync::mpsc::Sender, thread, time::Duration};
 
 use rand::prelude::*;
 
@@ -6,34 +6,11 @@ const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
 const FONT_ADDRESS: usize = 0x050;
 const FONT_SIZE: usize = 80;
+const CYCLE_PER_SECOND: u64 = 10;
+const MICROS_PER_SECOND: u64 = 1000000000;
+const MICROS_PER_CYCLE: u64 = MICROS_PER_SECOND / CYCLE_PER_SECOND;
 
 pub type Display = [[bool; SCREEN_WIDTH]; SCREEN_HEIGHT];
-
-/**
- * A Chip8 keypad is like below:
- * 1 2 3 C
- * 4 5 6 D
- * 7 8 9 E
- * A 0 B F
-**/
-enum Chip8Key {
-    Key1,
-    Key2,
-    Key3,
-    KeyC,
-    Key4,
-    Key5,
-    Key6,
-    KeyD,
-    Key7,
-    Key8,
-    Key9,
-    KeyE,
-    KeyA,
-    Key0,
-    KeyB,
-    KeyF,
-}
 
 pub struct Chipst8 {
     memory: [u8; 4096],
@@ -47,6 +24,7 @@ pub struct Chipst8 {
     keys: [bool; 16],
     is_running: bool,
     tx: Sender<Display>,
+    nanos_timer: u64,
 }
 
 impl Chipst8 {
@@ -85,6 +63,7 @@ impl Chipst8 {
             keys: [false; 16],
             is_running: false,
             tx,
+            nanos_timer: 0,
         }
     }
 
@@ -96,7 +75,10 @@ impl Chipst8 {
     }
 
     fn draw(&self) {
-        self.tx.send(self.display).unwrap();
+        match self.tx.send(self.display) {
+            Ok(_) => return,
+            Err(e) => eprintln!("miss a frame: {e}"),
+        }
     }
 
     pub fn get_screen(&self) -> Vec<Vec<bool>> {
@@ -104,6 +86,7 @@ impl Chipst8 {
     }
 
     pub fn set_key(&mut self, key: usize, pressed: bool) {
+        //println!("{key} {pressed}");
         self.keys[key] = pressed;
     }
 
@@ -113,7 +96,14 @@ impl Chipst8 {
         }
 
         let instruction = self.fetch();
+        println!("pc: {:X} inst: {instruction:X}", self.pc);
         self.execute(instruction);
+        self.nanos_timer += 1;
+        if self.nanos_timer >= 60 {
+            self.nanos_timer = 0;
+            self.timer_sub();
+        }
+        thread::sleep(Duration::from_millis(1));
     }
 
     fn fetch(&mut self) -> u16 {
@@ -123,6 +113,16 @@ impl Chipst8 {
         self.pc += 2;
 
         instruction
+    }
+
+    pub fn timer_sub(&mut self) {
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
+
+        if self.sound_timer > 0 {
+            self.sound_timer -= 1;
+        }
     }
 
     fn display_array_2_vec(&self, array: [[bool; SCREEN_WIDTH]; SCREEN_HEIGHT]) -> Vec<Vec<bool>> {

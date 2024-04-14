@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod chipst8;
 
+use serde::{Deserialize, Serialize};
 use tauri::{generate_context, Manager};
 use std::fs::File;
 use std::io::Read;
@@ -15,10 +16,16 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::chipst8::Chipst8;
 
-#[derive(Clone, serde::Serialize)]
-struct Payload {
+#[derive(Clone, Serialize)]
+struct ScreenPayload {
     //   #[serde(serialize_with = "<[_]>::serialize")]
     screen: Vec<Vec<bool>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct KeyPayload {
+    key: usize,
+    press: bool,
 }
 
 fn main() {
@@ -28,36 +35,54 @@ fn main() {
             let (tx, rx) = std::sync::mpsc::channel();
 
             let emu = Arc::new(Mutex::new(Chipst8::new(tx)));
-            let emu_in_app = emu.clone();
+            let emu_load = emu.clone();
+            let emu_key_event = emu.clone();
 
             {
                 let handle = app.handle().clone();
                 thread::spawn(move || {
-                    for display in rx {
-                        let payload = Payload {
-                            screen: display.iter().map(|row| row.to_vec()).collect(),
-                        };
-                        handle.emit("draw", Some(payload)).expect("failed to emit");
+                    loop {
+                        match rx.recv() {
+                            Ok(display) => {
+                                let payload = ScreenPayload {
+                                    screen: display.iter().map(|row| row.to_vec()).collect(),
+                                };
+                                match handle.emit("draw", Some(payload)) {
+                                    Ok(_) => continue,
+                                    Err(e) => eprintln!("receive display: {e}"),
+                                }
+                            },
+                            Err(e) => eprintln!("channel receive: {e}"),
+                        }
                     }
                 });
             }
 
             {
                 let handle = app.handle().clone();
-                app.listen_any("key", move |event| {
-                    println!("app is ready");
-              
-                    // we no longer need to listen to the event
-                    // we also could have used `app.once_global` instead
-                    handle.unlisten(event.id());
+                handle.listen_any("keyEvent", move |event| {
+                    //println!("{:?}", event.payload());
+
+                    let payload: KeyPayload = match serde_json::from_str(event.payload()) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            println!("{:?}", e);
+                            return;
+                        },
+                    };
+
+                    match emu_key_event.lock() {
+                        Ok(mut emu) => emu.set_key(payload.key, payload.press),
+                        Err(e) => eprintln!("key event: {e}"),
+                    };
                 });
             }
 
-            
-        
-
             thread::spawn(move || loop {
-                emu.lock().unwrap().cycle();
+                match emu.lock() {
+                    Ok(mut emu) => emu.cycle(),
+                    Err(e) => eprintln!("in cycle: {e}"),
+                }
             });
 
             let load = MenuItemBuilder::with_id("load", "Load").build(app)?;
@@ -73,7 +98,7 @@ fn main() {
                             let mut file = File::open(file_path.path).unwrap();
                             let mut buf = Vec::new();
                             file.read_to_end(&mut buf).unwrap();
-                            emu_in_app.lock().unwrap().load_rom(buf);
+                            emu_load.lock().unwrap().load_rom(buf);
                         }
                         None => {}
                     }
