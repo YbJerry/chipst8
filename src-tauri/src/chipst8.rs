@@ -23,12 +23,13 @@ pub struct Chipst8 {
     display: Display,
     keys: [bool; 16],
     is_running: bool,
-    tx: Sender<Display>,
+    display_tx: Sender<Display>,
+    beep_tx: Sender<bool>,
     nanos_timer: u64,
 }
 
 impl Chipst8 {
-    pub fn new(tx: Sender<Display>) -> Chipst8 {
+    pub fn new(display_tx: Sender<Display>, beep_tx: Sender<bool>) -> Chipst8 {
         let fonts = [
             0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
             0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -62,20 +63,21 @@ impl Chipst8 {
             pc: 0x200,
             keys: [false; 16],
             is_running: false,
-            tx,
+            display_tx,
+            beep_tx,
             nanos_timer: 0,
         }
     }
 
     pub fn load_rom(&mut self, rom: Vec<u8>) {
-        *self = Chipst8::new(self.tx.clone());
+        *self = Chipst8::new(self.display_tx.clone(), self.beep_tx.clone());
 
         self.memory[0x200..0x200 + rom.len()].copy_from_slice(&rom);
         self.is_running = true;
     }
 
     fn draw(&self) {
-        match self.tx.send(self.display) {
+        match self.display_tx.send(self.display) {
             Ok(_) => return,
             Err(e) => eprintln!("miss a frame: {e}"),
         }
@@ -96,7 +98,7 @@ impl Chipst8 {
         }
 
         let instruction = self.fetch();
-        println!("pc: {:X} inst: {instruction:X}", self.pc);
+        // println!("pc: {:04X} inst: {instruction:04X}", self.pc);
         self.execute(instruction);
         self.nanos_timer += 1;
         if self.nanos_timer >= 60 {
@@ -120,8 +122,15 @@ impl Chipst8 {
             self.delay_timer -= 1;
         }
 
+        let mut beep = false;
+
         if self.sound_timer > 0 {
+            beep = true;
             self.sound_timer -= 1;
+        }
+        match self.beep_tx.send(beep) {
+            Ok(_) => (),
+            Err(e) => eprintln!("beep: {e}"),
         }
     }
 
@@ -149,11 +158,15 @@ impl Chipst8 {
             // 00E0
             (0, 0, 0xE, 0) => {
                 self.display = [[false; SCREEN_WIDTH]; SCREEN_HEIGHT];
+                self.draw();
             }
             // 00EE
             (0, 0, 0xE, 0xE) => match self.stack.pop() {
                 Some(address) => self.pc = address,
-                None => panic!("The subroutine stack has been empty!"),
+                None => {
+                    eprintln!("The subroutine stack has been empty!");
+                    self.is_running = false;
+                }
             },
             // 1NNN
             (1, _, _, _) => {
@@ -285,15 +298,15 @@ impl Chipst8 {
             }
             // EX9E
             (0xE, _, 9, 0xE) => {
-                let key = self.keys[x];
-                if key {
+                let key = self.v[x];
+                if self.keys[key as usize] {
                     self.pc += 2;
                 }
             }
             // EXA1
             (0xE, _, 0xA, 1) => {
-                let key = self.keys[x];
-                if !key {
+                let key = self.v[x];
+                if !self.keys[key as usize] {
                     self.pc += 2;
                 }
             }
@@ -303,7 +316,13 @@ impl Chipst8 {
             }
             // FX0A
             (0xF, _, 0, 0xA) => {
-                self.v[x] = self.sound_timer;
+                for (key, pressed) in self.keys.iter().enumerate() {
+                    if *pressed {
+                        self.v[x] = key as u8;
+                        return;
+                    }
+                }
+                self.pc -= 2;
             }
             // FX15
             (0xF, _, 1, 5) => {
@@ -351,7 +370,10 @@ impl Chipst8 {
                 }
                 self.i += x as u16 + 1;
             }
-            _ => panic!("Unsupported instruction!"),
+            _ => {
+                eprintln!("Unsupported instruction!");
+                self.is_running = false;
+            }
         }
     }
 }

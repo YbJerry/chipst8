@@ -2,6 +2,19 @@
   import { onMount } from "svelte";
   import { listen, emit } from '@tauri-apps/api/event'
 
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // create Oscillator node
+  const oscillator = audioCtx.createOscillator();
+  const gainNode = audioCtx.createGain();
+
+  oscillator.type = "square";
+  oscillator.frequency.value = 440; // value in hertz
+  oscillator.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+
+  gainNode.gain.value = 0.02;
+
   function draw(pixels: Array<Array<boolean>>) {
     const canvas = document.getElementById('screen') as HTMLCanvasElement;
     const width = 10;
@@ -72,7 +85,10 @@
     console.log('mounted');
     draw(new Array(32).fill(new Array(64).fill(false)));
 
-    const unlisten = await listen('draw', (event: {
+    audioCtx.suspend();
+    oscillator.start();
+
+    await listen('draw', (event: {
       payload: {
         screen: Array<Array<boolean>>
       }
@@ -80,11 +96,29 @@
       console.log(event);
       draw(event.payload.screen as Array<Array<boolean>>);
     });
+
+    await listen('beep', (event: {
+      payload: {
+        beep: boolean
+      }
+    }) => {
+      console.log(event);
+      if (event.payload.beep) {
+        console.log('beep');
+        audioCtx.resume();
+      } else {
+        console.log('stop');
+        audioCtx.suspend();
+      }
+    });
   });
 </script>
 
 <svelte:window on:keydown={handleKeydown} on:keyup={handleKeyup} />
 <main>
   <!-- <div>test</div> -->
+  <!-- <audio src="beep.mp3"/> -->
+  <!-- <button on:click={() => emit('start')}>Start</button>
+  <button on:click={() => emit('stop')}>Stop</button> -->
   <canvas width="640px" height="320px" id="screen"></canvas>
 </main>

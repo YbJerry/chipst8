@@ -2,15 +2,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod chipst8;
 
-use serde::{Deserialize, Serialize};
-use tauri::{generate_context, Manager};
+use serde::{de, Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
+use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use tauri::menu::{
-    MenuBuilder, MenuItemBuilder,
-};
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::{generate_context, Manager};
 
 use tauri_plugin_dialog::DialogExt;
 
@@ -28,32 +27,52 @@ struct KeyPayload {
     press: bool,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+struct BeepPayload {
+    beep: bool,
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let (tx, rx) = std::sync::mpsc::channel();
+            let (display_tx, display_rx) = channel();
+            let (beep_tx, beep_rx) = channel();
 
-            let emu = Arc::new(Mutex::new(Chipst8::new(tx)));
+            let emu = Arc::new(Mutex::new(Chipst8::new(display_tx, beep_tx)));
             let emu_load = emu.clone();
             let emu_key_event = emu.clone();
 
             {
                 let handle = app.handle().clone();
-                thread::spawn(move || {
-                    loop {
-                        match rx.recv() {
-                            Ok(display) => {
-                                let payload = ScreenPayload {
-                                    screen: display.iter().map(|row| row.to_vec()).collect(),
-                                };
-                                match handle.emit("draw", Some(payload)) {
-                                    Ok(_) => continue,
-                                    Err(e) => eprintln!("receive display: {e}"),
-                                }
-                            },
-                            Err(e) => eprintln!("channel receive: {e}"),
+                thread::spawn(move || loop {
+                    match display_rx.recv() {
+                        Ok(display) => {
+                            let payload = ScreenPayload {
+                                screen: display.iter().map(|row| row.to_vec()).collect(),
+                            };
+                            match handle.emit("draw", payload) {
+                                Ok(_) => continue,
+                                Err(e) => eprintln!("receive display: {e}"),
+                            }
                         }
+                        Err(e) => eprintln!("channel receive: {e}"),
+                    }
+                });
+            }
+
+            {
+                let handle = app.handle().clone();
+                thread::spawn(move || loop {
+                    match beep_rx.recv() {
+                        Ok(beep) => {
+                            match handle.emit("beep", BeepPayload { beep }) {
+                                Ok(_) => continue,
+                                Err(e) => eprintln!("receive beep: {e}"),
+                            }
+                        }
+                        Err(e) => eprintln!("channel receive: {e}"),
                     }
                 });
             }
@@ -68,7 +87,7 @@ fn main() {
                         Err(e) => {
                             println!("{:?}", e);
                             return;
-                        },
+                        }
                     };
 
                     match emu_key_event.lock() {
