@@ -64,7 +64,7 @@ impl Chipst8 {
             display_tx,
             beep_tx,
             nanos_timer: 0,
-            micros_per_cycle: 80,
+            micros_per_cycle: 300,
         }
     }
 
@@ -78,15 +78,17 @@ impl Chipst8 {
     }
 
     pub fn speedup(&mut self) {
-        if self.micros_per_cycle > 40 {
-            self.micros_per_cycle -= 10;
+        if self.micros_per_cycle > 100 {
+            self.micros_per_cycle -= 100;
         }
+        println!("speed: {}", self.micros_per_cycle);
     }
 
     pub fn speeddown(&mut self) {
-        if self.micros_per_cycle < 200 {
-            self.micros_per_cycle += 10;
+        if self.micros_per_cycle < 2000 {
+            self.micros_per_cycle += 100;
         }
+        println!("speed: {}", self.micros_per_cycle);
     }
 
     fn draw(&self) {
@@ -105,10 +107,12 @@ impl Chipst8 {
         self.keys[key] = pressed;
     }
 
-    pub fn cycle(&mut self) {
+    pub fn cycle(&mut self, keys: [bool; 16]) {
         if !self.is_running {
             return;
         }
+
+        self.keys = keys;
 
         let instruction = self.fetch();
         // println!("pc: {:04X} inst: {instruction:04X}", self.pc);
@@ -284,30 +288,34 @@ impl Chipst8 {
             }
             // DXYN
             (0xD, _, _, _) => {
-                let px = self.v[x] as usize;
-                let py = self.v[y] as usize;
-                let mut vf = 0;
-                let i = self.i as usize;
-                let n = n as usize;
-
-                let sprite = &self.memory[i..(i + n)];
-
-                for py_icr in 0..n {
-                    for px_icr in 0..8 {
-                        let px = (px + px_icr) % SCREEN_WIDTH;
-                        let py = (py + py_icr) % SCREEN_HEIGHT;
-                        let sprite_row = sprite[py_icr];
-
-                        let pixel_prev = self.display[py][px];
-                        let pixel = (sprite_row >> (7 - px_icr)) & 0x1 != 0;
-                        vf |= (pixel_prev & !pixel) as u8;
-                        self.display[py][px] ^= pixel;
+                let mut px = ((self.v[x] as usize) % SCREEN_WIDTH) as usize;
+                let mut py = ((self.v[y] as usize) % SCREEN_HEIGHT) as usize;
+                self.v[0xF] = 0;
+                
+                let sprite = &self.memory[(self.i as usize)..((self.i + n) as usize)];
+                for i in 0..n {
+                    if py >= SCREEN_HEIGHT {
+                        break;
                     }
+                    let sprite_row = sprite[i as usize];
+                    for j in 0..8 {
+                        if px >= SCREEN_WIDTH {
+                            break;
+                        }
+
+                        let pixel = ((sprite_row >> (7 - j)) & 0x1) != 0;
+                        if self.display[py][px] && pixel {
+                            self.display[py][px] = false;
+                            self.v[0xF] = 1;
+                        } else if self.display[py][px] && !pixel {
+                            self.display[py][px] = true;
+                        }
+                        px += 1;
+                    }
+                    py += 1;
                 }
 
-                self.v[0xF] = vf;
                 self.draw();
-                // window.emit_all("draw", Payload { screen: self.display_array_2_vec(self.display) }).unwrap();
             }
             // EX9E
             (0xE, _, 9, 0xE) => {
@@ -329,9 +337,9 @@ impl Chipst8 {
             }
             // FX0A
             (0xF, _, 0, 0xA) => {
-                for (key, pressed) in self.keys.iter().enumerate() {
-                    if *pressed {
-                        self.v[x] = key as u8;
+                for i in 0..16 {
+                    if self.keys[i] {
+                        self.v[x] = i as u8;
                         return;
                     }
                 }
