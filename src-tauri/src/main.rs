@@ -2,12 +2,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod chipst8;
 
-use serde::{de, Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use serde::{Deserialize, Serialize};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::{generate_context, Manager};
 
@@ -30,6 +30,11 @@ struct KeyPayload {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct BeepPayload {
     beep: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+struct SpeedPayload {
+    speed: i64,
 }
 
 fn main() {
@@ -59,6 +64,33 @@ fn main() {
                         }
                         Err(e) => eprintln!("channel receive: {e}"),
                     }
+                });
+            }
+
+            {
+                let handle = app.handle().clone();
+                let emu = emu.clone();
+                handle.listen_any("speed", move |event| {
+                    println!("{:?}", event.payload());
+
+                    let payload: SpeedPayload = match serde_json::from_str(event.payload()) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            println!("{:?}", e);
+                            return;
+                        }
+                    };
+
+                    match emu.lock() {
+                        Ok(mut emu) => {
+                            if payload.speed > 0 {
+                                emu.speedup();
+                            } else {
+                                emu.speeddown();
+                            }
+                        },
+                        Err(e) => eprintln!("speed: {e}"),
+                    };
                 });
             }
 

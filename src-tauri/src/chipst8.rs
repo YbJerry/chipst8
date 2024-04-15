@@ -1,4 +1,4 @@
-use std::{any::Any, sync::mpsc::Sender, thread, time::Duration};
+use std::{sync::mpsc::Sender, thread, time::Duration};
 
 use rand::prelude::*;
 
@@ -6,9 +6,6 @@ const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
 const FONT_ADDRESS: usize = 0x050;
 const FONT_SIZE: usize = 80;
-const CYCLE_PER_SECOND: u64 = 10;
-const MICROS_PER_SECOND: u64 = 1000000000;
-const MICROS_PER_CYCLE: u64 = MICROS_PER_SECOND / CYCLE_PER_SECOND;
 
 pub type Display = [[bool; SCREEN_WIDTH]; SCREEN_HEIGHT];
 
@@ -26,6 +23,7 @@ pub struct Chipst8 {
     display_tx: Sender<Display>,
     beep_tx: Sender<bool>,
     nanos_timer: u64,
+    micros_per_cycle: u64,
 }
 
 impl Chipst8 {
@@ -66,14 +64,29 @@ impl Chipst8 {
             display_tx,
             beep_tx,
             nanos_timer: 0,
+            micros_per_cycle: 80,
         }
     }
 
     pub fn load_rom(&mut self, rom: Vec<u8>) {
+        let mpc = self.micros_per_cycle;
         *self = Chipst8::new(self.display_tx.clone(), self.beep_tx.clone());
+        self.micros_per_cycle = mpc;
 
         self.memory[0x200..0x200 + rom.len()].copy_from_slice(&rom);
         self.is_running = true;
+    }
+
+    pub fn speedup(&mut self) {
+        if self.micros_per_cycle > 40 {
+            self.micros_per_cycle -= 10;
+        }
+    }
+
+    pub fn speeddown(&mut self) {
+        if self.micros_per_cycle < 200 {
+            self.micros_per_cycle += 10;
+        }
     }
 
     fn draw(&self) {
@@ -105,7 +118,7 @@ impl Chipst8 {
             self.nanos_timer = 0;
             self.timer_sub();
         }
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(Duration::from_micros(self.micros_per_cycle));
     }
 
     fn fetch(&mut self) -> u16 {

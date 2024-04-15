@@ -65,6 +65,14 @@
   }
 
   async function handleKeydown(event: KeyboardEvent) {
+    if (event.key === '['){
+      await emit('speed', {speed: -1});
+      return;
+    } else if (event.key === ']'){
+      await emit('speed', {speed: 1});
+      return;
+    }
+
     //console.log(event);
     const key = transKey(event.key);
     // console.log(key)
