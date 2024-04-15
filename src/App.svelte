@@ -65,6 +65,10 @@
   }
 
   async function handleKeydown(event: KeyboardEvent) {
+    if (event.repeat) {
+      return;
+    }
+
     if (event.key === '['){
       await emit('speed', {speed: -1});
       return;
