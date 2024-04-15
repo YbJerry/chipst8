@@ -2,12 +2,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod chipst8;
 
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::sync::mpsc::channel;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::thread;
-use serde::{Deserialize, Serialize};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::{generate_context, Manager};
 
@@ -17,7 +17,6 @@ use crate::chipst8::Chipst8;
 
 #[derive(Clone, Serialize)]
 struct ScreenPayload {
-    //   #[serde(serialize_with = "<[_]>::serialize")]
     screen: Vec<Vec<bool>>,
 }
 
@@ -47,8 +46,6 @@ fn main() {
 
             let emu = Arc::new(Mutex::new(Chipst8::new(display_tx, beep_tx)));
             let emu_load = emu.clone();
-
-            let keys = Arc::new(RwLock::new([false; 16]));
 
             {
                 let handle = app.handle().clone();
@@ -89,7 +86,7 @@ fn main() {
                             } else {
                                 emu.speeddown();
                             }
-                        },
+                        }
                         Err(e) => eprintln!("speed: {e}"),
                     };
                 });
@@ -99,12 +96,10 @@ fn main() {
                 let handle = app.handle().clone();
                 thread::spawn(move || loop {
                     match beep_rx.recv() {
-                        Ok(beep) => {
-                            match handle.emit("beep", BeepPayload { beep }) {
-                                Ok(_) => continue,
-                                Err(e) => eprintln!("receive beep: {e}"),
-                            }
-                        }
+                        Ok(beep) => match handle.emit("beep", BeepPayload { beep }) {
+                            Ok(_) => continue,
+                            Err(e) => eprintln!("receive beep: {e}"),
+                        },
                         Err(e) => eprintln!("channel receive: {e}"),
                     }
                 });
@@ -112,7 +107,7 @@ fn main() {
 
             {
                 let handle = app.handle().clone();
-                let keys = keys.clone();
+                let emu = emu.clone();
                 handle.listen_any("keyEvent", move |event| {
                     //println!("{:?}", event.payload());
 
@@ -124,10 +119,10 @@ fn main() {
                         }
                     };
 
-                    match keys.write() {
-                        Ok(mut keys) => {
-                            keys[payload.key] = payload.press;
-                        },
+                    match emu.lock() {
+                        Ok(mut emu) => {
+                            emu.set_key(payload.key, payload.press);
+                        }
                         Err(e) => eprintln!("key event: {e}"),
                     }
                 });
@@ -136,13 +131,8 @@ fn main() {
             thread::spawn(move || loop {
                 match emu.lock() {
                     Ok(mut emu) => {
-                        match keys.read() {
-                            Ok(keys) => {
-                                emu.cycle(*keys);
-                            },
-                            Err(e) => eprintln!("in cycle: {e}"),
-                        }
-                    },
+                        emu.cycle();
+                    }
                     Err(e) => eprintln!("in cycle: {e}"),
                 }
             });
@@ -172,10 +162,3 @@ fn main() {
         .run(generate_context!())
         .expect("error while running tauri application")
 }
-
-// event.window().listen_global("keypress", |event| {
-
-// });
-// event.window().listen_global("keyrelease", |event| {
-
-// });
