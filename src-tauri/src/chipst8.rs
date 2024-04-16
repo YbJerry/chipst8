@@ -1,9 +1,10 @@
 use std::{
-    sync::{mpsc::Sender, Arc, Mutex},
+    sync::{mpsc::Sender, Arc},
     thread,
     time::Duration,
 };
 
+use parking_lot::Mutex;
 use rand::prelude::*;
 
 const SCREEN_WIDTH: usize = 64;
@@ -61,13 +62,9 @@ impl Chipst8 {
             let delay_timer = delay_timer.clone();
             thread::spawn(move || loop {
                 thread::sleep(Duration::from_millis(16));
-                match delay_timer.lock() {
-                    Ok(mut timer) => {
-                        if *timer > 0 {
-                            *timer -= 1;
-                        }
-                    }
-                    Err(e) => eprintln!("delay_timer: {e}"),
+                let mut timer = delay_timer.lock();
+                if *timer > 0 {
+                    *timer -= 1;
                 }
             })
         };
@@ -77,20 +74,15 @@ impl Chipst8 {
             let beep_tx = beep_tx.clone();
             thread::spawn(move || loop {
                 thread::sleep(Duration::from_millis(16));
-                match sound_timer.lock() {
-                    Ok(mut timer) => {
-                        let mut beep = false;
-
-                        if *timer > 0 {
-                            beep = true;
-                            *timer -= 1;
-                        }
-                        match (*beep_tx).send(beep) {
-                            Ok(_) => (),
-                            Err(e) => eprintln!("beep: {e}"),
-                        }
-                    }
-                    Err(e) => eprintln!("sound_timer: {e}"),
+                let mut timer = sound_timer.lock();
+                let mut beep = false;
+                if *timer > 0 {
+                    beep = true;
+                    *timer -= 1;
+                }
+                match (*beep_tx).send(beep) {
+                    Ok(_) => (),
+                    Err(e) => eprintln!("beep: {e}"),
                 }
             })
         };
@@ -121,16 +113,8 @@ impl Chipst8 {
         self.keys = [false; 16];
         self.is_running = false;
         self.wait_for_key_up = false;
-
-        match self.delay_timer.lock() {
-            Ok(mut timer) => *timer = 0,
-            Err(e) => eprintln!("reset delay_timer: {e}"),
-        }
-
-        match self.sound_timer.lock() {
-            Ok(mut timer) => *timer = 0,
-            Err(e) => eprintln!("reset sound_timer: {e}"),
-        }
+        *self.delay_timer.lock() = 0;
+        *self.sound_timer.lock() = 0;
     }
 
     pub fn load_rom(&mut self, rom: Vec<u8>) {
@@ -367,11 +351,8 @@ impl Chipst8 {
 
             }
             // FX07
-            (0xF, _, 0, 7) => match self.delay_timer.lock() {
-                Ok(timer) => {
-                    self.v[x] = *timer;
-                }
-                Err(e) => eprintln!("FX07 delay_timer read: {e}"),
+            (0xF, _, 0, 7) => {
+                self.v[x] = *self.delay_timer.lock();
             },
             // FX0A
             (0xF, _, 0, 0xA) => {
@@ -385,14 +366,12 @@ impl Chipst8 {
                 self.pc -= 2;
             },
             // FX15
-            (0xF, _, 1, 5) => match self.delay_timer.lock() {
-                Ok(mut timer) => *timer = self.v[x],
-                Err(e) => eprintln!("FX15 delay_timer write: {e}"),
+            (0xF, _, 1, 5) => {
+                *self.delay_timer.lock() = self.v[x];
             },
             // FX18
-            (0xF, _, 1, 8) => match self.sound_timer.lock() {
-                Ok(mut timer) => *timer = self.v[x],
-                Err(e) => eprintln!("FX18 sound_timer write: {e}"),
+            (0xF, _, 1, 8) => {
+                *self.sound_timer.lock() = self.v[x]
             },
             // FX1E
             (0xF, _, 1, 0xE) => {

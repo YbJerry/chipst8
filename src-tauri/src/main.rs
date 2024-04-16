@@ -6,10 +6,11 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::sync::mpsc::channel;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use std::thread;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::{generate_context, Manager};
+use parking_lot::Mutex;
 
 use tauri_plugin_dialog::DialogExt;
 
@@ -79,16 +80,12 @@ fn main() {
                         }
                     };
 
-                    match emu.lock() {
-                        Ok(mut emu) => {
-                            if payload.speed > 0 {
-                                emu.speedup();
-                            } else {
-                                emu.speeddown();
-                            }
-                        }
-                        Err(e) => eprintln!("speed: {e}"),
-                    };
+                    let mut emu = emu.lock();
+                    if payload.speed > 0 {
+                        emu.speedup();
+                    } else {
+                        emu.speeddown();
+                    }
                 });
             }
 
@@ -119,22 +116,12 @@ fn main() {
                         }
                     };
 
-                    match emu.lock() {
-                        Ok(mut emu) => {
-                            emu.set_key(payload.key as usize, payload.press);
-                        }
-                        Err(e) => eprintln!("key event: {e}"),
-                    }
+                    emu.lock().set_key(payload.key as usize, payload.press);
                 });
             }
 
             thread::spawn(move || loop {
-                match emu.lock() {
-                    Ok(mut emu) => {
-                        emu.cycle();
-                    }
-                    Err(e) => eprintln!("in cycle: {e}"),
-                }
+                emu.lock().cycle();
             });
 
             let load = MenuItemBuilder::with_id("load", "Load").build(app)?;
@@ -150,7 +137,7 @@ fn main() {
                             let mut file = File::open(file_path.path).unwrap();
                             let mut buf = Vec::new();
                             file.read_to_end(&mut buf).unwrap();
-                            emu_load.lock().unwrap().load_rom(buf);
+                            emu_load.lock().load_rom(buf);
                         }
                         None => {}
                     }

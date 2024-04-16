@@ -485,7 +485,7 @@ checksum = "77e53693616d3075149f4ead59bdeecd204ac6b8192d8969757601b74bddf00f"
 
 [[package]]
 name = "chipst8"
-version = "0.0.0"
+version = "1.0.0"
 dependencies = [
  "once_cell",
  "parking_lot",
