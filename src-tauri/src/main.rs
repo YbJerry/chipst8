@@ -2,15 +2,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod chipst8;
 
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::sync::mpsc::channel;
-use std::sync::{Arc};
+use std::sync::Arc;
 use std::thread;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::{generate_context, Manager};
-use parking_lot::Mutex;
 
 use tauri_plugin_dialog::DialogExt;
 
@@ -39,7 +39,7 @@ struct SpeedPayload {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_fs::init())
+        //.plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let (display_tx, display_rx) = channel();
@@ -132,7 +132,11 @@ fn main() {
             app.on_menu_event(move |app, event| {
                 if event.id() == "load" {
                     let mut emu_load = emu_load.lock();
-                    let file_path = app.dialog().file().add_filter("Chip8 Rom", &["ch8"]).blocking_pick_file();
+                    let file_path = app
+                        .dialog()
+                        .file()
+                        .add_filter("Chip8 Rom", &["ch8"])
+                        .blocking_pick_file();
                     match file_path {
                         Some(file_path) => {
                             let mut file = File::open(file_path.path).unwrap();
