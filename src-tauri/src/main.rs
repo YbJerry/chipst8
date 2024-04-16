@@ -131,13 +131,14 @@ fn main() {
 
             app.on_menu_event(move |app, event| {
                 if event.id() == "load" {
-                    let file_path = app.dialog().file().blocking_pick_file();
+                    let mut emu_load = emu_load.lock();
+                    let file_path = app.dialog().file().add_filter("Chip8 Rom", &["ch8"]).blocking_pick_file();
                     match file_path {
                         Some(file_path) => {
                             let mut file = File::open(file_path.path).unwrap();
                             let mut buf = Vec::new();
                             file.read_to_end(&mut buf).unwrap();
-                            emu_load.lock().load_rom(buf);
+                            emu_load.load_rom(buf);
                         }
                         None => {}
                     }
