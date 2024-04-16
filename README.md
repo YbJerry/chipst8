@@ -1,6 +1,9 @@
 # Chipst8
 
-A simple Chip8 emulator written by Rust.
+A simple Chip8 emulator written by Rust and Tauri.
+
+### Attention
+In this project, I use Mutex in parking_lot library to get high performance. Otherwise, when user press a key, Chipst8 will freeze for a while.
 
 ### How to run
 Init:
