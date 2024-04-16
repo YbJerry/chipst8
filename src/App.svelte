@@ -94,7 +94,7 @@
   }
 
   onMount(async () => {
-    console.log('mounted');
+    //console.log('mounted');
     draw(new Array(32).fill(new Array(64).fill(false)));
 
     audioCtx.suspend();
@@ -105,7 +105,7 @@
         screen: Array<Array<boolean>>
       }
     }) => {
-      console.log(event);
+      //console.log(event);
       draw(event.payload.screen as Array<Array<boolean>>);
     });
 
@@ -114,12 +114,12 @@
         beep: boolean
       }
     }) => {
-      console.log(event);
+      //console.log(event);
       if (event.payload.beep) {
-        console.log('beep');
+        //console.log('beep');
         audioCtx.resume();
       } else {
-        console.log('stop');
+        //console.log('stop');
         audioCtx.suspend();
       }
     });

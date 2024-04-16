@@ -22,7 +22,7 @@ struct ScreenPayload {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct KeyPayload {
-    key: usize,
+    key: u8,
     press: bool,
 }
 
@@ -33,7 +33,7 @@ struct BeepPayload {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct SpeedPayload {
-    speed: i64,
+    speed: i8,
 }
 
 fn main() {
@@ -121,7 +121,7 @@ fn main() {
 
                     match emu.lock() {
                         Ok(mut emu) => {
-                            emu.set_key(payload.key, payload.press);
+                            emu.set_key(payload.key as usize, payload.press);
                         }
                         Err(e) => eprintln!("key event: {e}"),
                     }

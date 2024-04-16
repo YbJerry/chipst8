@@ -1,5 +1,5 @@
 use std::{
-    sync::{mpsc::Sender, Arc, Condvar, Mutex},
+    sync::{mpsc::Sender, Arc, Mutex},
     thread,
     time::Duration,
 };
@@ -22,11 +22,11 @@ pub struct Chipst8 {
     sound_timer: Arc<Mutex<u8>>,
     delay_timer: Arc<Mutex<u8>>,
     display: Display,
-    keys: Mutex<[bool; 16]>,
+    keys: [bool; 16],
     is_running: bool,
     display_tx: Sender<Display>,
     micros_per_cycle: u64,
-    key_up_cond: Condvar,
+    wait_for_key_up: bool,
 }
 
 impl Chipst8 {
@@ -104,11 +104,11 @@ impl Chipst8 {
             delay_timer,
             display: [[false; SCREEN_WIDTH]; SCREEN_HEIGHT],
             pc: 0x200,
-            keys: Mutex::new([false; 16]),
+            keys: [false; 16],
             is_running: false,
             display_tx,
             micros_per_cycle: 300,
-            key_up_cond: Condvar::new(),
+            wait_for_key_up: false,
         }
     }
 
@@ -118,11 +118,9 @@ impl Chipst8 {
         self.v = [0; 16];
         self.stack = Vec::new();
         self.display = [[false; SCREEN_WIDTH]; SCREEN_HEIGHT];
-        match self.keys.lock() {
-            Ok(mut keys) => *keys = [false; 16],
-            Err(e) => eprintln!("reset key_mutex: {e}"),
-        }
+        self.keys = [false; 16];
         self.is_running = false;
+        self.wait_for_key_up = false;
 
         match self.delay_timer.lock() {
             Ok(mut timer) => *timer = 0,
@@ -163,24 +161,25 @@ impl Chipst8 {
     }
 
     pub fn set_key(&mut self, key: usize, pressed: bool) {
-        match self.keys.lock() {
-            Ok(mut keys) => {
-                (*keys)[key] = pressed;
-                if !pressed {
-                    self.key_up_cond.notify_all();
-                }
-            }
-            Err(e) => eprintln!("set_key: {e}"),
+        self.keys[key] = pressed;
+        if !pressed {
+            self.wait_for_key_up = false;
         }
     }
 
     pub fn cycle(&mut self) {
         if !self.is_running {
+            thread::sleep(Duration::from_micros(self.micros_per_cycle));
+            return;
+        }
+
+        if self.wait_for_key_up {
+            thread::sleep(Duration::from_micros(self.micros_per_cycle));
             return;
         }
 
         let instruction = self.fetch();
-        // println!("pc: {:04X} inst: {instruction:04X}", self.pc);
+        //println!("pc: {:04X} inst: {instruction:04X}", self.pc);
         self.execute(instruction);
         thread::sleep(Duration::from_micros(self.micros_per_cycle));
     }
@@ -355,26 +354,17 @@ impl Chipst8 {
             // EX9E
             (0xE, _, 9, 0xE) => {
                 let key = self.v[x];
-                match self.keys.lock() {
-                    Ok(keys) => {
-                        if keys[key as usize] {
-                            self.pc += 2;
-                        }
-                    }
-                    Err(e) => eprintln!("EX9E key_mutex: {e}"),
+                if self.keys[key as usize] {
+                    self.pc += 2;
                 }
             }
             // EXA1
             (0xE, _, 0xA, 1) => {
                 let key = self.v[x];
-                match self.keys.lock() {
-                    Ok(keys) => {
-                        if !keys[key as usize] {
-                            self.pc += 2;
-                        }
-                    }
-                    Err(e) => eprintln!("EXA1 key_mutex: {e}"),
+                if !self.keys[key as usize] {
+                    self.pc += 2;
                 }
+
             }
             // FX07
             (0xF, _, 0, 7) => match self.delay_timer.lock() {
@@ -384,21 +374,15 @@ impl Chipst8 {
                 Err(e) => eprintln!("FX07 delay_timer read: {e}"),
             },
             // FX0A
-            (0xF, _, 0, 0xA) => match self.keys.lock() {
-                Ok(keys) => {
-                    for i in 0..16 {
-                        if keys[i] {
-                            self.v[x] = i as u8;
-                            match self.key_up_cond.wait(keys) {
-                                Ok(_) => (),
-                                Err(e) => eprintln!("FX0A key_up_cond: {e}"),
-                            }
-                            return;
-                        }
+            (0xF, _, 0, 0xA) => {
+                for i in 0..16 {
+                    if self.keys[i] {
+                        self.v[x] = i as u8;
+                        self.wait_for_key_up = true;
+                        return;
                     }
-                    self.pc -= 2;
                 }
-                Err(e) => eprintln!("FX0A key_mutex: {e}"),
+                self.pc -= 2;
             },
             // FX15
             (0xF, _, 1, 5) => match self.delay_timer.lock() {
@@ -430,7 +414,6 @@ impl Chipst8 {
                 self.memory[i] = d2;
                 self.memory[i + 1] = d1;
                 self.memory[i + 2] = d0;
-                // println!("{} {} {} {}", num, d2, d1, d0);
             }
             // FX55
             (0xF, _, 5, 5) => {

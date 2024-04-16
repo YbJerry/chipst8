@@ -488,6 +488,7 @@ name = "chipst8"
 version = "0.0.0"
 dependencies = [
  "once_cell",
+ "parking_lot",
  "rand 0.8.5",
  "serde",
  "serde_json",
